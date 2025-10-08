@@ -1,0 +1,7 @@
+*.pyc
+.venv
+__pycache__
+.vscode
+output/
+*.yaml
+data/
