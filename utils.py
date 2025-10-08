@@ -1,6 +1,6 @@
 import pandas as pd
 import json
-from typing import Any, Union, Optional, List
+from typing import Any, Union, Optional, List, Dict
 from pathlib import Path
 import numpy as np
 
@@ -80,3 +80,29 @@ def concat_dfs(df_list: List[pd.DataFrame]) -> pd.DataFrame:
     """
 
     return pd.concat(df_list, axis=1)
+
+
+def load_json(path: Union[str, Path]) -> Dict[str, Any]:
+    """
+    Load a JSON file into a Python dictionary.
+
+    Args:
+        path (str | Path): Path to the JSON file.
+
+    Returns:
+        dict: Parsed JSON content.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+        json.JSONDecodeError: If the file is not a valid JSON.
+    """
+
+    path = Path(path)
+
+    if not path.exists():
+        raise FileNotFoundError(f"JSON file not found: {path}")
+
+    with open(path, "r") as f:
+        data = json.load(f)
+
+    return data
