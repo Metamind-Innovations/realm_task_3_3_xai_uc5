@@ -3,6 +3,7 @@ import json
 from typing import Any, Union, Optional, List, Dict
 from pathlib import Path
 import numpy as np
+import pickle
 
 
 def load_csv(file_path: Union[str, Path]) -> Optional[pd.DataFrame]:
@@ -104,5 +105,50 @@ def load_json(path: Union[str, Path]) -> Dict[str, Any]:
 
     with open(path, "r") as f:
         data = json.load(f)
+
+    return data
+
+
+def is_between(x: float, low: float = 0, high: float = 1) -> bool:
+    """
+    Check if a value lies within a closed interval [low, high].
+
+    Args:
+        x (float): The value to check.
+        low (float, optional): Lower bound of the interval. Defaults to 0.
+        high (float, optional): Upper bound of the interval. Defaults to 1.
+
+    Returns:
+        bool: True if `x` is between `low` and `high`, False otherwise.
+    """
+    return low <= x <= high
+
+
+def save_pickle(data: Any, filepath: Union[str, Path]) -> None:
+    """
+    Save any Python object to a pickle file.
+
+    Args:
+        data: Any Python object to save
+        filepath: Path to save file (str or Path object)
+    """
+
+    with open(filepath, "wb") as f:
+        pickle.dump(data, f)
+
+
+def load_pickle(filepath: Union[str, Path]) -> Any:
+    """
+    Load any Python object from a pickle file.
+
+    Args:
+        filepath: Path to pickle file (str or Path object)
+
+    Returns:
+        The loaded Python object
+    """
+
+    with open(filepath, "rb") as f:
+        data = pickle.load(f)
 
     return data
