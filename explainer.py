@@ -278,6 +278,8 @@ def run_explainability_analysis(
         filepath=output_dir.joinpath(f"{method}_detailed_results.pickle"),
     )
 
+    print(f"Explainability analysis completed. Results saved to {output_dir}")
+
 
 def main():
     """
