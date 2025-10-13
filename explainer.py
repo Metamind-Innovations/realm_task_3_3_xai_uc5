@@ -306,13 +306,15 @@ def lime_analysis(
             top_labels=1,
         )
 
-        explanation_list = instance_explanation.as_list()
+        explained_class = int(instance_explanation.top_labels[0])
+        explanation_list = instance_explanation.as_list(label=explained_class)
 
         # Current instance weights
         instance_weights = {
             "instance_idx": k,
             "true_class": int(y[k][0]),
             "predicted_class": model.predict(X[k : k + 1]),
+            "explained_class": explained_class,
         }
 
         # Extract weight for each feature
