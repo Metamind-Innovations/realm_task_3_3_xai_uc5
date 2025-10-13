@@ -1,10 +1,14 @@
 import argparse
-from typing import Dict, Literal, List, Any, Tuple, Union
+from typing import Dict, Literal, List, Any, Tuple, Union, DefaultDict
 import pandas as pd
 from pathlib import Path
 from sklearn.model_selection import train_test_split
 import shap
 import numpy as np
+import lime
+from tqdm import tqdm
+from collections import defaultdict
+import re
 
 from utils import load_csv, store_json, is_between, save_pickle
 from COPowereD_model import COPowereDWrapper
@@ -183,7 +187,7 @@ def shap_to_json(
 
 
 def shap_analysis(
-    X: np.ndarray, y: np.ndarray, model: COPowereDWrapper, feature_names: List[str]
+    X: pd.DataFrame, y: pd.DataFrame, feature_names: List[str]
 ) -> Tuple[
     Dict[str, Union[List[float], List[List[float]], List[str]]], shap.Explanation
 ]:
@@ -196,7 +200,6 @@ def shap_analysis(
     Args:
         X (pd.DataFrame): Feature matrix of shape (n_samples, n_features).
         y (pd.DataFrame): Target labels.
-        model (COPowereDWrapper): Trained model with predict_proba method.
         feature_names (List[str]): List of feature names corresponding to X columns.
 
     Returns:
@@ -209,6 +212,8 @@ def shap_analysis(
     # Split data
     X_background, X_explain, y_background, y_explain = stratified_split(X=X, y=y)
 
+    model = COPowereDWrapper(feature_names=feature_names, one_dim_preds=True)
+
     # SHAP XAI analysis
     shap_explainer = shap.KernelExplainer(model=model.predict_proba, data=X_background)
     shap_values = shap_explainer(X=X_explain)
@@ -217,6 +222,119 @@ def shap_analysis(
     summary = shap_to_json(shap_values=shap_values.values, feature_names=feature_names)
 
     return summary, shap_values
+
+
+def lime_global_importance(
+    weights_per_feature: DefaultDict[str, List[float]],
+) -> Dict[str, Dict[str, float]]:
+    """Calculate global feature importance metrics from LIME explanations.
+    Computes three key metrics for each feature across all instances:
+    - Importance: Mean absolute weight (magnitude of influence)
+    - Mean weight: Average directional weight (positive/negative influence)
+    - Standard deviation: Variability of weights across instances
+
+    Args:
+        weights_per_feature (DefaultDict[str, List[float]]): Dictionary
+                            mapping feature names to lists of weights.
+
+    Returns:
+        Dict[str, Dict[str, float]]: Dictionary mapping feature names to their global importance metrics.
+    """
+
+    global_feature_importance = {}
+
+    for feature, weights in weights_per_feature.items():
+
+        global_feature_importance[feature] = {
+            "importance": float(np.mean(np.abs(weights))),
+            "mean_weight": float(np.mean(weights)),
+            "std_weight": float(np.std(weights)),
+        }
+
+    return global_feature_importance
+
+
+def lime_analysis(
+    X: pd.DataFrame, y: pd.DataFrame, feature_names: List[str]
+) -> Tuple[Dict[str, Dict[str, float]], List[Dict[str, Union[int, float]]]]:
+    """Perform LIME explainability analysis on tabular data.
+    Generates local explanations for each instance using LIME (Local Interpretable
+    Model-agnostic Explanations) and aggregates them into global feature importance
+    metrics. Each instance's prediction is explained by computing feature weights
+    that indicate how much each feature contributes to the model's prediction.
+
+    Args:
+        X (pd.DataFrame): Feature matrix.
+        y (pd.DataFrame): Target labels indicating the true class for each sample.
+        feature_names (List[str]): List of feature names corresponding to columns in X.
+
+    Returns:
+        Tuple containing:
+        - Dict[str, Dict[str, float]]: Dictionary mapping each feature to its global
+            importance metrics across all instances.
+        - List[Dict[str, Union[int, float]]]: List of dictionaries, one per instance, containing
+            the feature weights for that specific prediction.
+    """
+
+    model = COPowereDWrapper(feature_names=feature_names)
+
+    class_names = list(model.get_class_names().values())
+    categorical_indices = [X.columns.get_loc(col) for col in CATEGORICAL_COLUMNS]
+
+    # Data dfs to arrays
+    X = X.values
+    y = y.values
+
+    # LIME XAI analysis
+    lime_explainer = lime.lime_tabular.LimeTabularExplainer(
+        training_data=X,
+        feature_names=feature_names,
+        categorical_features=categorical_indices,
+        class_names=class_names,
+        mode="classification",
+    )
+
+    instance_feature_weights = []
+    weights_per_feature = defaultdict(list)
+
+    for k in tqdm(range(len(X)), desc="LIME XAI analysis for instance"):
+
+        instance_explanation = lime_explainer.explain_instance(
+            data_row=X[k],
+            predict_fn=model.predict_proba,
+            num_features=len(feature_names),
+            top_labels=1,
+        )
+
+        explanation_list = instance_explanation.as_list()
+
+        # Current instance weights
+        instance_weights = {
+            "instance_idx": k,
+            "true_class": int(y[k][0]),
+            "predicted_class": model.predict(X[k : k + 1]),
+        }
+
+        # Extract weight for each feature
+        for feature_desc, weight in explanation_list:
+            # Get feature name
+            match = re.search(r"[A-Za-z_][A-Za-z0-9_]*", feature_desc)
+            if match:
+                base_feature = match.group(0)
+            else:
+                base_feature = feature_desc
+
+            # Store for specific instance
+            instance_weights[base_feature] = weight
+
+            # Keep for global calculation
+            weights_per_feature[base_feature].append(weight)
+
+        instance_feature_weights.append(instance_weights)
+
+    global_feature_importance = lime_global_importance(weights_per_feature)
+
+    return global_feature_importance, instance_feature_weights
 
 
 def run_explainability_analysis(
@@ -257,15 +375,16 @@ def run_explainability_analysis(
     print(f"Using method: {method} based on sensitivity: {sensitivity}")
 
     feature_names = tabular_data.columns.to_list()
-    model = COPowereDWrapper(feature_names=feature_names, one_dim_preds=True)
 
     # Perform analysis
     if method == "lime":
-        pass
+        results, detailed_results = lime_analysis(
+            X=tabular_data, y=label, feature_names=feature_names
+        )
 
     elif method == "shap":
         results, detailed_results = shap_analysis(
-            X=tabular_data, y=label, model=model, feature_names=feature_names
+            X=tabular_data, y=label, feature_names=feature_names
         )
 
     # Store results to output dir
@@ -273,9 +392,16 @@ def run_explainability_analysis(
 
     store_json(data=results, path=output_dir.joinpath(f"{method}_analysis.json"))
 
-    save_pickle(
-        data=detailed_results,
-        filepath=output_dir.joinpath(f"{method}_detailed_results.pickle"),
+    (
+        save_pickle(
+            data=detailed_results,
+            filepath=output_dir.joinpath(f"{method}_detailed_results.pickle"),
+        )
+        if method == "shap"
+        else store_json(
+            data=detailed_results,
+            path=output_dir.joinpath(f"{method}_detailed_results.json"),
+        )
     )
 
     print(f"Explainability analysis completed. Results saved to {output_dir}")

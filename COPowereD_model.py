@@ -344,7 +344,10 @@ class COPowereDWrapper:
         return all_probabilities
 
     def predict(
-        self, df: pd.DataFrame, num_retries: int = 3, retry_delay: float = 1.0
+        self,
+        data: Union[pd.DataFrame, np.ndarray],
+        num_retries: int = 3,
+        retry_delay: float = 1.0,
     ) -> np.ndarray:
         """
         Predict class labels for input DataFrame.
@@ -352,7 +355,7 @@ class COPowereDWrapper:
         configured threshold.
 
         Args:
-            df (pd.DataFrame): DataFrame with patient data containing columns
+            data (Union[pd.DataFrame, np.ndarray]): Tabular patient data containing columns
                 mapped in COLUMN_MAPPING (Gender, Age, Height, Weight, etc.).
             num_retries (int): Number of retry attempts on failure (default: 3).
             retry_delay (float): Initial delay between retries in seconds (default: 1.0).
@@ -364,11 +367,11 @@ class COPowereDWrapper:
         """
 
         probabilities = self.predict_proba(
-            df=df, num_retries=num_retries, retry_delay=retry_delay
+            data=data, num_retries=num_retries, retry_delay=retry_delay
         )
 
         # Apply threshold to get predictions
-        predictions = (probabilities[:, 1] > self.threshold).astype(int)
+        predictions = int((probabilities[:, 1] > self.threshold))
         self._last_predictions = predictions
 
         return predictions
