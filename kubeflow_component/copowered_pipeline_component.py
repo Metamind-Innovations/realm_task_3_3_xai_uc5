@@ -54,6 +54,8 @@ def download_repo(
         "explainer.py",
         "fairness_bias_analysis.py",
         "utils.py",
+        "fairness_bias_visualization.py",
+        "explainer_visualization.py",
     ]
 
     # Copy specific scripts
