@@ -277,7 +277,14 @@ Arguments:
 - `--pred_target`: Path to the model's predicted labels CSV file.
 - `--output`: Path to save the output JSON file containing the fairness and bias metrics.
 
-Visualization of the results is **optional** and can be done using the `fairness_bias_visualization.py` script:
+The predicted labels are expected to be in CSV format with the following structure. The label column can take two values, 0 and 1 (label: 0 = No medical attention needed, 1 = Medical attention needed).
+
+| label |
+|-------|
+| 1     |
+| 0     |
+
+Visualization of the results can be done using the `fairness_bias_visualization.py` script:
 
 ```bash
 python fairness_bias_visualization.py --analysis_results 'output/fairness_analysis.json' --output output
@@ -301,23 +308,19 @@ Arguments:
   - sensitivity ≥ 0.5: SHAP analysis
 - `--output`: Directory to save the output files (explanations). Default is `output`.
 
-Visualization of the results is **optional** and can be done with the `explainer_visualization.py` script:
+Visualization of the results can be done with the `explainer_visualization.py` script:
 ```bash
-# For SHAP
-python explainer_visualization.py --analysis_results path/to/output/shap_detailed_results.pickle --output output --method shap
-```
-
-```bash
-# For LIME
-python explainer_visualization.py --analysis_results path/to/output/lime_analysis.json --output output --method lime
+python explainer_visualization.py --analysis_results path/to/output/shap_detailed_results.pickle --output output --sensitivity 0.5
 ```
 
 Arguments:
 - `--analysis_results`: Path to the analysis results file (`pickle` for SHAP, `json` for LIME).
 - `--output`: Directory to save the generated visualizations. Default is `output`.
-- `--method`: XAI method used ('shap' or 'lime')
+- `--sensitivity`: Sensitivity value (between 0 and 1) indicating the explainability technique used. Default is `0.7`.
+  - sensitivity < 0.5: LIME analysis
+  - sensitivity ≥ 0.5: SHAP analysis
 
-Alterantively, the analyses can be executed as part of the Kubeflow pipeline component, as described in the [Kubeflow Pipeline Component](#kubeflow-pipeline-component) section below.
+Alterantively, the analyses and visualizations can be executed as part of the Kubeflow pipeline component, as described in the [Kubeflow Pipeline Component](#kubeflow-pipeline-component) section below.
 
 
 ## JSON Output
@@ -472,24 +475,18 @@ LIME analysis produces two files:
 
 ### Fairness and Bias Analysis Visualizations
 
-Equalized Odds Plots:
-<p align="center">
-  <img src="./media/Age_false_positive_rate.png" width="49%"/>
-  <img src="./media/Gender_false_positive_rate.png" width="49%"/>
-</p>
+Equalized Odds and Demographic Parity Plots for Age Demographic column:
+![Kubeflow Pipeline](./media/age_fairness_bias.png)
 
-Demographic Parity Plots:
-<p align="center">
-  <img src="./media/Age_prediction_rates_by_group.png" width="49%"/>
-  <img src="./media/Gender_prediction_rates_by_group.png" width="49%"/>
-</p>
+Equalized Odds and Demographic Parity Plots for Gender Demographic column:
+![Kubeflow Pipeline](./media/gender_fairness_bias.png)
 
 ### Explainability Analysis Visualizations
 SHAP and LIME Explanations Plots
 <p align="center">
-  <img src="./media/shap_bar_plot.png" width="20.5%"/>
-  <img src="./media/shap_beeswarm_plot.png" width="24%"/>
-  <img src="./media/lime_barplot.png" width="34%"/>
+  <img src="./media/shap_bar_plot.png" width="26%"/>
+  <img src="./media/shap_beeswarm_plot.png" width="30%"/>
+  <img src="./media/lime_barplot.png" width="41%"/>
 </p>
 
 ## Understanding the Results
@@ -524,15 +521,23 @@ For LIME:
 The [copowered_pipeline_component.py](./kubeflow_component/copowered_pipeline_component.py) file defines a Kubeflow pipeline for automating the COPowereD XAI analysis workflow. This pipeline orchestrates the following components:
 
 - Download Component: Downloads project files and data from a specified GitHub repository and branch. The pipeline expects the repo to contain:
-  - Project files in root: `COPowereD_model.py`, `explainer.py`, `fairness_bias_analysis.py`, `utils.py`.
+  - Project files in root: `COPowereD_model.py`, `explainer.py`, `fairness_bias_analysis.py`, `fairness_bias_visualization.py`, `explainer_visualization.py`, `utils.py`.
   - Data in `data/` folder: `tabular_data.csv` (with labels), `pred.csv` (predictions).
 - Fairness/Bias Analysis: Executes the fairness and bias analysis using the provided script, generating the output mentioned in the [Fairness and Bias Analysis Output](#fairness-and-bias-analysis-output) section.
+- Fairness/Bias Visualization: Creates visual representations of fairness / bias metrics across demographic groups (Age, Gender), generating consolidated bar charts showing equalized odds (false positive rates) and demographic parity (prediction rates). Outputs PNG files described in [Fairness and Bias Analysis Visualizations](#fairness-and-bias-analysis-visualizations).
 - Explainability Analysis: Executes the explainability analysis using the provided script, generating the output mentioned in the [Explainability Analysis Output](#explainability-analysis-output) section.
+- Explainability Visualization: Generates visualizations based on the selected method (determined by sensitivity parameter):
+  - SHAP (sensitivity ≥ 0.5): Beeswarm and bar plots showing feature impacts.
+  - LIME (sensitivity < 0.5): Bar plot showing aggregated feature importance.
+  - Outputs PNG files described in [Explainability Analysis Visualizations](#explainability-analysis-visualizations).
 
 ### Pipeline Architecture
 The pipeline follows this execution pattern:
 - Sequential Phase: Repository download runs first.
 - Parallel Phase: Fairness and explainability analyses run simultaneously after repository download completes.
+- Visualization Phase: Each analysis step is followed by its corresponding visualization step:
+  - Fairness analysis followed by Fairness visualization
+  - Explainability analysis followed by Explainability visualization
 
 ![Kubeflow Pipeline](./media/kubeflow_pipeline.png)
 

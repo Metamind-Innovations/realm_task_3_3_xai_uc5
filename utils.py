@@ -1,6 +1,6 @@
 import pandas as pd
 import json
-from typing import Any, Union, Optional, List, Dict
+from typing import Any, Union, Optional, List, Dict, Literal
 from pathlib import Path
 import numpy as np
 import pickle
@@ -152,3 +152,20 @@ def load_pickle(filepath: Union[str, Path]) -> Any:
         data = pickle.load(f)
 
     return data
+
+
+def select_method(sens: float) -> Literal["shap", "lime"]:
+    """
+    Select an explainability method based on sensitivity level.
+    Values < 0.5 -> "lime".
+    Values >= 0.5 -> "shap".
+
+    Args:
+        sens (float): Sensitivity parameter in the range [0, 1].
+
+    Returns:
+        Literal["shap", "lime"]: The name of the selected
+                                explainability method.
+    """
+
+    return "lime" if sens < 0.5 else "shap"

@@ -1,5 +1,5 @@
 import argparse
-from typing import Dict, Literal, List, Any, Tuple, Union, DefaultDict
+from typing import Dict, List, Any, Tuple, Union, DefaultDict
 import pandas as pd
 from pathlib import Path
 from sklearn.model_selection import train_test_split
@@ -10,7 +10,7 @@ from tqdm import tqdm
 from collections import defaultdict
 import re
 
-from utils import load_csv, store_json, is_between, save_pickle
+from utils import load_csv, store_json, is_between, save_pickle, select_method
 from COPowereD_model import COPowereDWrapper
 
 
@@ -60,23 +60,6 @@ def pass_checks(
         return False
 
     return True
-
-
-def select_method(sens: float) -> Literal["shap", "lime"]:
-    """
-    Select an explainability method based on sensitivity level.
-    Values < 0.5 -> "lime".
-    Values >= 0.5 -> "shap".
-
-    Args:
-        sens (float): Sensitivity parameter in the range [0, 1].
-
-    Returns:
-        Literal["shap", "lime"]: The name of the selected
-                                explainability method.
-    """
-
-    return "lime" if sens < 0.5 else "shap"
 
 
 def data_imputation(data: pd.DataFrame) -> pd.DataFrame:
