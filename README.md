@@ -484,9 +484,9 @@ Equalized Odds and Demographic Parity Plots for Gender Demographic column:
 ### Explainability Analysis Visualizations
 SHAP and LIME Explanations Plots
 <p align="center">
-  <img src="./media/shap_bar_plot.png" width="20.5%"/>
-  <img src="./media/shap_beeswarm_plot.png" width="24%"/>
-  <img src="./media/lime_barplot.png" width="34%"/>
+  <img src="./media/shap_bar_plot.png" width="26%"/>
+  <img src="./media/shap_beeswarm_plot.png" width="30%"/>
+  <img src="./media/lime_barplot.png" width="41%"/>
 </p>
 
 ## Understanding the Results
