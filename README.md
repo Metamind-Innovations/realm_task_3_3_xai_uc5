@@ -28,248 +28,55 @@ The COPowereD model takes clinical biomedical data and predicts whether a COPD p
 
 Key Components:
 1. Input Data: CSV file containing clinical biomedical data for COPD patients with features including demographics, baseline vitals, and current symptoms. More details in the [Data Structure section](#data-structure) below.
-2. Model: Gradient Boosted Tree Pipeline (GBTP) for binary classification (`needMedicalAttention` vs `notNeedMedicalAttention`). Model details available in the provided model card.
-3. Fairness/Bias Analysis: Performed using the [fairness_bias_analysis.py](./fairness_bias_analysis.py) script. Evaluates equalized odds and demographic parity across Age and Gender groups. This script can be executed independently and as part of the Kubeflow pipeline component.
-4. Explainability Analysis: Performed using the [explainer.py](./explainer.py) script with dynamic method selection based on sensitivity value. Again, this script can be executed independently and as part of the Kubeflow pipeline component.
+2. Model: Dockerized Gradient Boosted Tree Pipeline (GBTP) for binary classification (`needMedicalAttention` vs `notNeedMedicalAttention`), wrapped by [COPowereD_model.py](./COPowereD_model.py). Model details available in the provided model card.
+3. Fairness/Bias Analysis: Performed using the [fairness_bias_analysis.py](./fairness_bias_analysis.py) script. Evaluates equalized odds and demographic parity across Age and Gender groups (`age` and `sexe` columns). This script can be executed independently and as part of the Kubeflow pipeline component.
+4. Explainability Analysis: Performed using the [explainer.py](./explainer.py) script with dynamic method selection based on sensitivity value. It can use the Dockerized model directly or an optional Docker `result.csv` predictions file with a `proba` column. Again, this script can be executed independently and as part of the Kubeflow pipeline component.
 5. Visualizations: Generated using [fairness_bias_visualization.py](./fairness_bias_visualization.py) and [explainer_visualization.py](./explainer_visualization.py) scripts.
 
 
 ## Getting Started
 
 ### Prerequisites
-- Python 3.13 or higher
+- Python 3.14 is preferred. The Kubeflow components use `python:3.14-slim`.
 - Required Python packages (installed via `pip install -r requirements.txt`, can be found in [requirements.txt](./requirements.txt))
 
 ### Data Structure
 
 The input data is expected to be in CSV format with the following structure (features and label). The label column can take two values, 0 and 1 (label: 0 = No medical attention needed, 1 = Medical attention needed).
 
-| id | Gender | Age | Height | Weight | BMI | b_COPD | b_HeartRate | b_SPO2 | s_Worsening | s_Breath | s_Cough | s_Sputum | c_HeartRate | c_SPO2 | label |
-|----|--------|-----|--------|--------|-----|--------|-------------|--------|-------------|----------|---------|----------|-------------|--------|-------|
-| 0  | 1      | 65  | 175    | 80     | 26.1| 2      | 75          | 95     | 1           | 2        | 2       | 1        | 82          | 93     | 1     |
-| 1  | 0      | 58  | 162    | 68     | 25.9| 1      | 68          | 97     | 0           | 1        | 1       | 0        | 70          | 96     | 0     |
+| sexe | age | baseline_height | baseline_weight | baseline_bmi | baseline_copd | baseline_heartRate | baseline_spo2 | symp_worsening | symp_breath | symp_cough | symp_sputum | heartRate | spo2 | label |
+|------|-----|-----------------|-----------------|--------------|---------------|--------------------|---------------|----------------|-------------|------------|-------------|-----------|------|-------|
+| 0    | 80  | 175.26          | 63.5            | 20.67        | 3             | 82                 | 91            | 2              | 3           | 2          | 0           | 92        | 89   | 1     |
+| 0    | 54  | 154.94          | 53.98           | 22.49        | 0             | 81                 | 93            | 0              | 2           | 2          | 0           | 81        | 92   | 0     |
 
 ### Running the COPowereD Model
 
-The COPowereD model is accessible via a REST API. Use the following command to make predictions:
+The current codebase runs the COPowereD model through the Dockerized wrapper in [COPowereD_model.py](./COPowereD_model.py). The wrapper uses the local Docker image `copd_comunicare:1.0.1` by default, or the image configured through the `COPOWERED_MODEL_IMAGE` environment variable.
 
-```bash
-curl -X POST https://canalytics.comunicare.io/api/prediction \
-  -H "Content-Type: application/json" \
-  -d '{
-  "methods": [
-    {
-      "project": "BpcoTriagingBinary",
-      "algo": "MLGBTPipeline",
-      "version": "0.0.1"
-    }
-  ],
-  "observations": [
-    {
-      "subject": {
-        "reference": "patient_001"
-      },
-      "component": [
-        {
-          "valueQuantity": {"value": 1},
-          "code": {
-            "coding": [{"code": "46098-0", "display": "sex", "system": "http://loinc.org"}]
-          }
-        },
-        {
-          "valueQuantity": {"value": 65},
-          "code": {
-            "coding": [{"code": "63900-5", "display": "Current age or age at death", "system": "http://loinc.org"}]
-          }
-        },
-        {
-          "valueQuantity": {"value": 175},
-          "code": {
-            "coding": [{"code": "8302-2", "display": "Body height", "system": "http://loinc.org"}]
-          },
-          "instant": "baseline"
-        },
-        {
-          "valueQuantity": {"value": 80},
-          "code": {
-            "coding": [{"code": "3141-9", "display": "Body Weight", "system": "http://loinc.org"}]
-          },
-          "instant": "baseline"
-        },
-        {
-          "valueQuantity": {"value": 26.1},
-          "code": {
-            "coding": [{"code": "39156-5", "display": "Body mass index", "system": "http://loinc.org"}]
-          },
-          "instant": "baseline"
-        },
-        {
-          "valueQuantity": {"value": 2},
-          "code": {
-            "coding": [{"code": "13645005", "display": "COPD Gold stage", "system": "http://snomed.info/sct"}]
-          },
-          "instant": "baseline"
-        },
-        {
-          "valueQuantity": {"value": 75},
-          "code": {
-            "coding": [{"code": "8867-4", "display": "Heart rate baseline", "system": "http://loinc.org"}]
-          },
-          "instant": "baseline"
-        },
-        {
-          "valueQuantity": {"value": 95},
-          "code": {
-            "coding": [{"code": "20564-1", "display": "Oxygen saturation baseline", "system": "http://loinc.org"}]
-          },
-          "instant": "baseline"
-        },
-        {
-          "valueQuantity": {"value": 1},
-          "code": {
-            "coding": [{"code": "275723000", "display": "Deteriorating condition", "system": "http://snomed.info/sct"}]
-          }
-        },
-        {
-          "valueQuantity": {"value": 2},
-          "code": {
-            "coding": [{"code": "267036007", "display": "Dyspnea", "system": "http://snomed.info/sct"}]
-          }
-        },
-        {
-          "valueQuantity": {"value": 2},
-          "code": {
-            "coding": [{"code": "49727002", "display": "Cough", "system": "http://snomed.info/sct"}]
-          }
-        },
-        {
-          "valueQuantity": {"value": 1},
-          "code": {
-            "coding": [{"code": "248595008_365445003", "display": "Sputum : Volume and Color", "system": "http://snomed.info/sct"}]
-          }
-        },
-        {
-          "valueQuantity": {"value": 82},
-          "code": {
-            "coding": [{"code": "8867-4", "display": "Heart rate", "system": "http://loinc.org"}]
-          }
-        },
-        {
-          "valueQuantity": {"value": 93},
-          "code": {
-            "coding": [{"code": "20564-1", "display": "Oxygen saturation", "system": "http://loinc.org"}]
-          }
-        }
-      ]
-    }
-  ]
-}'
+The Docker model expects the feature columns shown above without the `label` column and writes `result.csv` with a single `proba` column containing the predicted probability of `needMedicalAttention`.
+
+An example Docker `result.csv` is shown below:
+
+```csv
+proba
+0.38523909005359264
+0.28790749396075277
+0.9798439176048229
 ```
 
-An example response is shown below:
-
-```json
-{
-  "success": true,
-  "message": null,
-  "data": [
-    {
-      "subject": {
-        "reference": "patient_001"
-      },
-      "identifier": [
-        {
-          "value": "Risk_Copd_Triaging_Binary",
-          "system": "http://comunicare.io"
-        }
-      ],
-      "prediction": [
-        {
-          "outcome": {
-            "coding": [
-              {
-                "code": "needMedicalAttention",
-                "display": "Need for medical attention",
-                "system": "http://comunicare.io"
-              }
-            ]
-          },
-          "rationale": "GBTP",
-          "probabilityDecimal": 0.5320359882519113,
-          "order": 1,
-          "version": "0.0.1"
-        },
-        {
-          "outcome": {
-            "coding": [
-              {
-                "code": "notNeedMedicalAttention",
-                "display": "No need for medical attention",
-                "system": "http://comunicare.io"
-              }
-            ]
-          },
-          "rationale": "GBTP",
-          "probabilityDecimal": 0.46796401174808866,
-          "order": 0,
-          "version": "0.0.1"
-        },
-        {
-          "outcome": {
-            "coding": [
-              {
-                "code": "notNeedMedicalAttention",
-                "display": "No need for medical attention",
-                "system": "http://comunicare.io"
-              }
-            ]
-          },
-          "rationale": "summary",
-          "probabilityDecimal": 0.46796401174808866,
-          "order": 0
-        },
-        {
-          "outcome": {
-            "coding": [
-              {
-                "code": "needMedicalAttention",
-                "display": "Need for medical attention",
-                "system": "http://comunicare.io"
-              }
-            ]
-          },
-          "rationale": "summary",
-          "probabilityDecimal": 0.5320359882519113,
-          "order": 1
-        }
-      ],
-      "statut": "final"
-    }
-  ]
-}
-```
-
-The response includes:
-- success: Boolean indicating if the API call was successful.
-- message: Error message (null if successful).
-- data: Array containing prediction results for each patient.
-  - subject: Patient reference ID.
-  - identifier: Model identification information.
-  - prediction: Array of predictions with both GBTP model results and summary results.
-    - outcome: The predicted class code (needMedicalAttention or notNeedMedicalAttention).
-    - probabilityDecimal: Probability score for the predicted class.
+For local script and Kubeflow execution, predictions are represented by this `proba` column.
 
 ### Analyses Execution
 
 In order for the analyses to be executed:
-- The provided dataset should be downloaded and stored.
+- The provided dataset should be available as `data/data.csv` or another labeled CSV with the same columns.
 - For an input CSV dataset, the explainability and fairness analyses can be executed as described in the next sections.
 
 #### Fairness/Bias Analysis
 
 The fairness and bias analysis can be executed independently using the following command:
 ```bash
-python fairness_bias_analysis.py --tabular_data 'path/to/tabular_data.csv' --pred_target 'path/to/pred.csv' --output 'output/fairness_analysis.json'
+python fairness_bias_analysis.py --tabular_data 'data/data.csv' --pred_target 'path/to/pred.csv' --output 'output/fairness_analysis.json'
 ```
 
 Arguments:
@@ -283,6 +90,8 @@ The predicted labels are expected to be in CSV format with the following structu
 |-------|
 | 1     |
 | 0     |
+
+If starting from a Docker `result.csv` file, the `proba` values should be converted to binary predicted labels before running the script. The Kubeflow pipeline performs this conversion automatically with a `0.5` threshold.
 
 Visualization of the results can be done using the `fairness_bias_visualization.py` script:
 
@@ -298,7 +107,7 @@ Arguments:
 The explainability analysis can be executed independently using the following command:
 
 ```bash
-python explainer.py --tabular_data 'path/to/tabular_data.csv' --sensitivity 0.7 --output output
+python explainer.py --tabular_data 'data/data.csv' --sensitivity 0.7 --output output
 ```
 
 Arguments:
@@ -307,6 +116,7 @@ Arguments:
   - sensitivity < 0.5: LIME analysis
   - sensitivity ≥ 0.5: SHAP analysis
 - `--output`: Directory to save the output files (explanations). Default is `output`.
+- `--predictions`: Optional path to a Docker model `result.csv` file with a `proba` column. When provided, the explainer trains a balanced random forest surrogate on binary labels derived from these probabilities instead of calling the Dockerized model directly.
 
 Visualization of the results can be done with the `explainer_visualization.py` script:
 ```bash
@@ -320,18 +130,18 @@ Arguments:
   - sensitivity < 0.5: LIME analysis
   - sensitivity ≥ 0.5: SHAP analysis
 
-Alterantively, the analyses and visualizations can be executed as part of the Kubeflow pipeline component, as described in the [Kubeflow Pipeline Component](#kubeflow-pipeline-component) section below.
+Alternatively, the analyses and visualizations can be executed as part of the Kubeflow pipeline component, as described in the [Kubeflow Pipeline Component](#kubeflow-pipeline-component) section below.
 
 
 ## JSON Output
 
 ### Fairness and Bias Analysis Output
-The fairness and bias analysis outputs a JSON file, `fairness_bias_analysis.json`, with the following structure. The metrics are calculated based on two demographic attributes, `Age` and `Gender`.
+The fairness and bias analysis outputs a JSON file, `fairness_analysis.json`, with the following structure. The metrics are calculated based on two demographic attributes, age and gender (`age` and `sexe` columns).
 
 ```json
 {
     "equalized_odds_metrics": {
-        "Age": {
+        "age": {
             "error_rates_by_group": {
                 "70+": {
                     "false_positive_rate": 0.0
@@ -344,7 +154,7 @@ The fairness and bias analysis outputs a JSON file, `fairness_bias_analysis.json
                 }
             }
         },
-        "Gender": {
+        "sexe": {
             "error_rates_by_group": {
                 "0": {
                     "false_positive_rate": 0.0
@@ -356,14 +166,14 @@ The fairness and bias analysis outputs a JSON file, `fairness_bias_analysis.json
         }
     },
     "demographic_parity_metrics": {
-        "Age": {
+        "age": {
             "prediction_rates_by_group": {
                 "70+": 0.4444444444444444,
                 "55-69": 0.2,
                 "40-54": 0.3333333333333333
             }
         },
-        "Gender": {
+        "sexe": {
             "prediction_rates_by_group": {
                 "0": 0.2727272727272727,
                 "1": 0.4444444444444444
@@ -408,9 +218,9 @@ SHAP analysis produces two files:
         ...
     ],
     "features": [
-        "Gender",
-        "Age",
-        "b_HeartRate",
+        "sexe",
+        "age",
+        "baseline_heartRate",
         ...
     ]
 }
@@ -426,17 +236,17 @@ LIME analysis produces two files:
 `lime_analysis.json` structure:
 ```json
 {
-    "c_SPO2": {
+    "spo2": {
         "importance": 0.2231,
         "mean_weight": 0.1113,
         "std_weight": 0.0431
     },
-    "s_Sputum": {
+    "symp_sputum": {
         "importance": 0.1554,
         "mean_weight": 0.0916,
         "std_weight": 0.0554
     },
-    "Age": {
+    "age": {
         "importance": 0.0209,
         "mean_weight": 0.0189,
         "std_weight": 0.0201
@@ -453,10 +263,10 @@ LIME analysis produces two files:
         "true_class": 1,
         "predicted_class": 1,
         "explained_class": 1,
-        "c_SPO2": 0.1244,
-        "s_Sputum": -0.0538,
-        "Age": 0.0210,
-        "Height": -0.0129,
+        "spo2": 0.1244,
+        "symp_sputum": -0.0538,
+        "age": 0.0210,
+        "baseline_height": -0.0129,
         ...
     },
     {
@@ -464,8 +274,8 @@ LIME analysis produces two files:
         "true_class": 1,
         "predicted_class": 1,
         "explained_class": 1,
-        "c_SPO2": -0.1218,
-        "s_Sputum": 0.0570,
+        "spo2": -0.1218,
+        "symp_sputum": 0.0570,
         ...
     }
 ]
@@ -478,7 +288,7 @@ LIME analysis produces two files:
 Equalized Odds and Demographic Parity Plots for Age Demographic column:
 ![Kubeflow Pipeline](./media/age_fairness_bias.png)
 
-Equalized Odds and Demographic Parity Plots for Gender Demographic column:
+Equalized Odds and Demographic Parity Plots for Gender (`sexe`) Demographic column:
 ![Kubeflow Pipeline](./media/gender_fairness_bias.png)
 
 ### Explainability Analysis Visualizations
@@ -513,19 +323,22 @@ For LIME:
 - `mean_weight`: Indicates average direction (positive/negative).
 - `std_weight`: Indicates variability - higher values mean the feature's importance varies more across instances.
 - Detailed results show which features were most important for each individual prediction, allowing for instance-level interpretation.
-- Thge Bar Plot shows aggregated global feature importance from LIME local explanations. Features are ranked by their average absolute weight across all instances.
+- The Bar Plot shows aggregated global feature importance from LIME local explanations. Features are ranked by their average absolute weight across all instances.
 
 
 ## Kubeflow Pipeline Component
 
 The [copowered_pipeline_component.py](./kubeflow_component/copowered_pipeline_component.py) file defines a Kubeflow pipeline for automating the COPowereD XAI analysis workflow. This pipeline orchestrates the following components:
 
+Before compiling the pipeline for deployment, set the `DOCKER_IMAGE` constant in [copowered_pipeline_component.py](./kubeflow_component/copowered_pipeline_component.py) to the COPowereD image that Kubeflow can pull.
+
 - Download Component: Downloads project files and data from a specified GitHub repository and branch. The pipeline expects the repo to contain:
   - Project files in root: `COPowereD_model.py`, `explainer.py`, `fairness_bias_analysis.py`, `fairness_bias_visualization.py`, `explainer_visualization.py`, `utils.py`.
-  - Data in `data/` folder: `tabular_data.csv` (with labels), `pred.csv` (predictions).
-- Fairness/Bias Analysis: Executes the fairness and bias analysis using the provided script, generating the output mentioned in the [Fairness and Bias Analysis Output](#fairness-and-bias-analysis-output) section.
-- Fairness/Bias Visualization: Creates visual representations of fairness / bias metrics across demographic groups (Age, Gender), generating consolidated bar charts showing equalized odds (false positive rates) and demographic parity (prediction rates). Outputs PNG files described in [Fairness and Bias Analysis Visualizations](#fairness-and-bias-analysis-visualizations).
-- Explainability Analysis: Executes the explainability analysis using the provided script, generating the output mentioned in the [Explainability Analysis Output](#explainability-analysis-output) section.
+  - Data in `data/` folder: `data.csv` (with labels).
+- COPowereD Predictions: Removes the `label` column, runs the configured COPowereD Docker image, and writes `result.csv` with a `proba` column.
+- Fairness/Bias Analysis: Converts the Docker `proba` values to predicted labels with a `0.5` threshold and executes the fairness and bias analysis using the provided script, generating the output mentioned in the [Fairness and Bias Analysis Output](#fairness-and-bias-analysis-output) section.
+- Fairness/Bias Visualization: Creates visual representations of fairness / bias metrics across demographic groups (Age, Gender; `age` and `sexe` columns), generating consolidated bar charts showing equalized odds (false positive rates) and demographic parity (prediction rates). Outputs PNG files described in [Fairness and Bias Analysis Visualizations](#fairness-and-bias-analysis-visualizations).
+- Explainability Analysis: Executes the explainability analysis using the provided script and the Docker `result.csv` predictions, generating the output mentioned in the [Explainability Analysis Output](#explainability-analysis-output) section.
 - Explainability Visualization: Generates visualizations based on the selected method (determined by sensitivity parameter):
   - SHAP (sensitivity ≥ 0.5): Beeswarm and bar plots showing feature impacts.
   - LIME (sensitivity < 0.5): Bar plot showing aggregated feature importance.
@@ -534,7 +347,8 @@ The [copowered_pipeline_component.py](./kubeflow_component/copowered_pipeline_co
 ### Pipeline Architecture
 The pipeline follows this execution pattern:
 - Sequential Phase: Repository download runs first.
-- Parallel Phase: Fairness and explainability analyses run simultaneously after repository download completes.
+- Prediction Phase: Dockerized COPowereD predictions run after repository download completes.
+- Parallel Phase: Fairness and explainability analyses run simultaneously after model predictions complete.
 - Visualization Phase: Each analysis step is followed by its corresponding visualization step:
   - Fairness analysis followed by Fairness visualization
   - Explainability analysis followed by Explainability visualization
@@ -542,7 +356,7 @@ The pipeline follows this execution pattern:
 ![Kubeflow Pipeline](./media/kubeflow_pipeline.png)
 
 ### Running the Pipeline
-The pipeline can be compiled and deployed to a Kubeflow environment by executing:
+The pipeline can be compiled for deployment to a Kubeflow environment by executing:
 ```bash
 python kubeflow_component/copowered_pipeline_component.py
 ```
