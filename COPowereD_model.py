@@ -43,6 +43,7 @@ class COPowereDWrapper:
         feature_names: Optional[list] = None,
         one_dim_preds: bool = False,
         docker_executable: str = "docker",
+        in_docker: bool = False,
     ) -> None:
         """Initialize the Dockerized COPowereD model wrapper.
 
@@ -55,12 +56,16 @@ class COPowereDWrapper:
         :param one_dim_preds: Return only positive-class probabilities when
             ``True``.
         :param docker_executable: Docker command executable.
+        :param in_docker: When ``True``, the wrapper is running inside the
+            COPowereD container and invokes the Java command directly instead
+            of launching a ``docker run`` subprocess.
         """
         self.image = image or os.getenv("COPOWERED_MODEL_IMAGE", self.DEFAULT_IMAGE)
         self.threshold = threshold
         self.feature_names = feature_names
         self.one_dim_preds = one_dim_preds
         self.docker_executable = docker_executable
+        self.in_docker = in_docker
         self._last_probabilities = None
         self._last_predictions = None
         self._last_response = None
@@ -111,17 +116,9 @@ class COPowereDWrapper:
             result_csv = output_dir / "result.csv"
             model_data.to_csv(input_csv, index=False)
 
-            command = [
-                self.docker_executable,
-                "run",
-                "--rm",
-                "--entrypoint",
-                "sh",
-                "-v",
-                f"{data_dir.as_posix()}:/app/data",
-                self.image,
-                "-c",
-                (
+            if self.in_docker:
+                # Already inside the container — call the Java model directly.
+                shell_cmd = (
                     "cd /app && "
                     "printf '%s\\n' "
                     "'log4j.rootLogger=ERROR, stdout' "
@@ -129,15 +126,46 @@ class COPowereDWrapper:
                     "'log4j.appender.stdout.Target=System.out' "
                     "'log4j.appender.stdout.layout=org.apache.log4j.PatternLayout' "
                     "> log4j.properties && "
-                    f"{self.MODEL_COMMAND}"
-                ),
-            ]
-            completed = subprocess.run(
-                command,
-                capture_output=True,
-                check=False,
-                text=True,
-            )
+                    "java -cp /app/sparkServer-assembly-1.2.0.jar "
+                    "MLProjects.bpco.triage.models.CopdComunicare_001 "
+                    f"--input_folder {input_dir.as_posix()} "
+                    f"--output_folder {output_dir.as_posix()}"
+                )
+                completed = subprocess.run(
+                    shell_cmd,
+                    shell=True,
+                    capture_output=True,
+                    check=False,
+                    text=True,
+                )
+            else:
+                command = [
+                    self.docker_executable,
+                    "run",
+                    "--rm",
+                    "--entrypoint",
+                    "sh",
+                    "-v",
+                    f"{data_dir.as_posix()}:/app/data",
+                    self.image,
+                    "-c",
+                    (
+                        "cd /app && "
+                        "printf '%s\\n' "
+                        "'log4j.rootLogger=ERROR, stdout' "
+                        "'log4j.appender.stdout=org.apache.log4j.ConsoleAppender' "
+                        "'log4j.appender.stdout.Target=System.out' "
+                        "'log4j.appender.stdout.layout=org.apache.log4j.PatternLayout' "
+                        "> log4j.properties && "
+                        f"{self.MODEL_COMMAND}"
+                    ),
+                ]
+                completed = subprocess.run(
+                    command,
+                    capture_output=True,
+                    check=False,
+                    text=True,
+                )
 
             if completed.returncode == 0 and result_csv.exists():
                 result_df = pd.read_csv(result_csv)

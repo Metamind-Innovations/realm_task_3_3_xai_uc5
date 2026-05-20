@@ -268,57 +268,42 @@ def fairness_visualization(
     subprocess.run(cmd, check=True)
 
 
-@dsl.component(
-    base_image=PYTHON_BASE_IMAGE,
-    packages_to_install=[
-        "numpy>=2.3.3",
-        "pandas>=2.3.3",
-        "scikit-learn>=1.7.2",
-        "shap>=0.48.0",
-        "lime>=0.2.0.1",
-        "tqdm>=4.67.1",
-    ],
-)
+@dsl.container_component
 def explainer_analysis(
     project_files: Input[Model],
     data: Input[Dataset],
     explainer_results: Output[Dataset],
     sensitivity: float,
-) -> None:
-    """Run explainer analysis on the COPowereD model.
+):
+    """Run explainer analysis inside the COPowereD Docker container.
 
     :param project_files: Input path containing project scripts.
     :param data: Input path containing labeled ``data.csv``.
     :param explainer_results: Output path for explainer results.
     :param sensitivity: Sensitivity parameter for the explainer script.
     """
-    import subprocess
-    from pathlib import Path
+    command_str = f"""
+        set -e
+        apt-get update -qq
+        apt-get install -y -qq python3 python3-dev curl
+        curl -sS https://bootstrap.pypa.io/get-pip.py | python3 - --break-system-packages
+        python3 -m pip install --break-system-packages \
+            numpy>=2.3.3 pandas>=2.3.3 scikit-learn>=1.7.2 shap>=0.48.0 lime>=0.2.0.1 tqdm>=4.67.1
+        mkdir -p "{explainer_results.path}"
+        cd {project_files.path}
+        python3 explainer.py \
+            --tabular_data {data.path}/data.csv \
+            --sensitivity {sensitivity} \
+            --output {explainer_results.path} \
+            --in_docker True
+        ls -la {explainer_results.path}
+    """
 
-    proj_path = Path(project_files.path)
-    data_path = Path(data.path)
-    results_path = Path(explainer_results.path)
-    results_path.mkdir(parents=True, exist_ok=True)
-
-    script = proj_path / "explainer.py"
-    tabular_csv = data_path / "data.csv"
-
-    if not script.exists():
-        raise FileNotFoundError(f"Explainer script not found at {script}")
-    if not tabular_csv.exists():
-        raise FileNotFoundError(f"Tabular data file not found at {tabular_csv}")
-
-    cmd = [
-        "python",
-        str(script),
-        "--tabular_data",
-        str(tabular_csv),
-        "--sensitivity",
-        str(sensitivity),
-        "--output",
-        str(results_path),
-    ]
-    subprocess.run(cmd, check=True)
+    return dsl.ContainerSpec(
+        image=DOCKER_IMAGE,
+        command=["sh", "-c"],
+        args=[command_str],
+    )
 
 
 @dsl.component(

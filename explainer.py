@@ -174,6 +174,7 @@ def shap_analysis(
     X: pd.DataFrame,
     y: pd.DataFrame,
     feature_names: List[str],
+    in_docker: bool = False,
 ) -> Tuple[
     Dict[str, Union[List[float], List[List[float]], List[str]]], shap.Explanation
 ]:
@@ -198,7 +199,7 @@ def shap_analysis(
     # Split data
     X_background, X_explain, y_background, y_explain = stratified_split(X=X, y=y)
 
-    model = COPowereDWrapper(feature_names=feature_names, one_dim_preds=True)
+    model = COPowereDWrapper(feature_names=feature_names, one_dim_preds=True, in_docker=in_docker)
 
     # SHAP XAI analysis
     shap_explainer = shap.KernelExplainer(model=model.predict_proba, data=X_background)
@@ -244,6 +245,7 @@ def lime_analysis(
     X: pd.DataFrame,
     y: pd.DataFrame,
     feature_names: List[str],
+    in_docker: bool = False,
 ) -> Tuple[Dict[str, Dict[str, float]], List[Dict[str, Union[int, float]]]]:
     """Perform LIME explainability analysis on tabular data.
     Generates local explanations for each instance using LIME (Local Interpretable
@@ -264,7 +266,7 @@ def lime_analysis(
             the feature weights for that specific prediction.
     """
 
-    model = COPowereDWrapper(feature_names=feature_names)
+    model = COPowereDWrapper(feature_names=feature_names, in_docker=in_docker)
 
     class_names = list(model.get_class_names().values())
     categorical_indices = [X.columns.get_loc(col) for col in CATEGORICAL_COLUMNS]
@@ -331,6 +333,7 @@ def run_explainability_analysis(
     tabular_data: Union[str, Path],
     output_dir: Union[str, Path],
     sensitivity: float,
+    in_docker: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Runs an explainability analysis on tabular data using either lime
@@ -369,12 +372,12 @@ def run_explainability_analysis(
     # Perform analysis
     if method == "lime":
         results, detailed_results = lime_analysis(
-            X=tabular_data, y=label, feature_names=feature_names,
+            X=tabular_data, y=label, feature_names=feature_names, in_docker=in_docker,
         )
 
     elif method == "shap":
         results, detailed_results = shap_analysis(
-            X=tabular_data, y=label, feature_names=feature_names,
+            X=tabular_data, y=label, feature_names=feature_names, in_docker=in_docker,
         )
 
     # Store results to output dir
@@ -421,6 +424,12 @@ def main():
         default=0.7,
         help="Sensitivity value (0-1): <0.5 uses lime, >=0.5 uses shap",
     )
+    parser.add_argument(
+        "--in_docker",
+        type=lambda v: v == "True",
+        default=False,
+        help="Set to True when running inside the COPowereD Docker container",
+    )
     args = parser.parse_args()
 
     if not is_between(x=args.sensitivity):
@@ -430,6 +439,7 @@ def main():
         tabular_data=args.tabular_data,
         output_dir=Path(args.output),
         sensitivity=args.sensitivity,
+        in_docker=args.in_docker,
     )
 
 
