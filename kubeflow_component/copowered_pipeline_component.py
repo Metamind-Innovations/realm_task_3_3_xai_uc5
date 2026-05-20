@@ -435,10 +435,9 @@ def copowered_pipeline(
     explainer_task = explainer_analysis(
         project_files=repo_task.outputs["project_files"],
         data=repo_task.outputs["data"],
-        predictions=predictions_task.outputs["predictions"],
         sensitivity=sensitivity,
     )
-    explainer_task.after(predictions_task)
+    explainer_task.after(repo_task)
     explainer_task.set_caching_options(False)
     explainer_task.set_cpu_request("4000m")
     explainer_task.set_cpu_limit("8000m")
