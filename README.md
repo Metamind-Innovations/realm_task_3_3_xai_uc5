@@ -30,7 +30,7 @@ Key Components:
 1. Input Data: CSV file containing clinical biomedical data for COPD patients with features including demographics, baseline vitals, and current symptoms. More details in the [Data Structure section](#data-structure) below.
 2. Model: Dockerized Gradient Boosted Tree Pipeline (GBTP) for binary classification (`needMedicalAttention` vs `notNeedMedicalAttention`), wrapped by [COPowereD_model.py](./COPowereD_model.py). Model details available in the provided model card.
 3. Fairness/Bias Analysis: Performed using the [fairness_bias_analysis.py](./fairness_bias_analysis.py) script. Evaluates equalized odds and demographic parity across Age and Gender groups (`age` and `sexe` columns). This script can be executed independently and as part of the Kubeflow pipeline component.
-4. Explainability Analysis: Performed using the [explainer.py](./explainer.py) script with dynamic method selection based on sensitivity value. It can use the Dockerized model directly or an optional Docker `result.csv` predictions file with a `proba` column. Again, this script can be executed independently and as part of the Kubeflow pipeline component.
+4. Explainability Analysis: Performed using the [explainer.py](./explainer.py) script with dynamic method selection based on sensitivity value. It uses the Dockerized model directly. Again, this script can be executed independently and as part of the Kubeflow pipeline component.
 5. Visualizations: Generated using [fairness_bias_visualization.py](./fairness_bias_visualization.py) and [explainer_visualization.py](./explainer_visualization.py) scripts.
 
 
@@ -116,7 +116,6 @@ Arguments:
   - sensitivity < 0.5: LIME analysis
   - sensitivity ≥ 0.5: SHAP analysis
 - `--output`: Directory to save the output files (explanations). Default is `output`.
-- `--predictions`: Optional path to a Docker model `result.csv` file with a `proba` column. When provided, the explainer trains a balanced random forest surrogate on binary labels derived from these probabilities instead of calling the Dockerized model directly.
 
 Visualization of the results can be done with the `explainer_visualization.py` script:
 ```bash
@@ -338,7 +337,7 @@ Before compiling the pipeline for deployment, set the `DOCKER_IMAGE` constant in
 - COPowereD Predictions: Removes the `label` column, runs the configured COPowereD Docker image, and writes `result.csv` with a `proba` column.
 - Fairness/Bias Analysis: Converts the Docker `proba` values to predicted labels with a `0.5` threshold and executes the fairness and bias analysis using the provided script, generating the output mentioned in the [Fairness and Bias Analysis Output](#fairness-and-bias-analysis-output) section.
 - Fairness/Bias Visualization: Creates visual representations of fairness / bias metrics across demographic groups (Age, Gender; `age` and `sexe` columns), generating consolidated bar charts showing equalized odds (false positive rates) and demographic parity (prediction rates). Outputs PNG files described in [Fairness and Bias Analysis Visualizations](#fairness-and-bias-analysis-visualizations).
-- Explainability Analysis: Executes the explainability analysis using the provided script and the Docker `result.csv` predictions, generating the output mentioned in the [Explainability Analysis Output](#explainability-analysis-output) section.
+- Explainability Analysis: Executes the explainability analysis using the provided script and generates the output mentioned in the [Explainability Analysis Output](#explainability-analysis-output) section.
 - Explainability Visualization: Generates visualizations based on the selected method (determined by sensitivity parameter):
   - SHAP (sensitivity ≥ 0.5): Beeswarm and bar plots showing feature impacts.
   - LIME (sensitivity < 0.5): Bar plot showing aggregated feature importance.
@@ -348,7 +347,8 @@ Before compiling the pipeline for deployment, set the `DOCKER_IMAGE` constant in
 The pipeline follows this execution pattern:
 - Sequential Phase: Repository download runs first.
 - Prediction Phase: Dockerized COPowereD predictions run after repository download completes.
-- Parallel Phase: Fairness and explainability analyses run simultaneously after model predictions complete.
+- Fairness-Bias Phase: Fairness-Bias analysis runs after model predictions complete.
+- Explainability Phase: Explainability analysis runs after repository download complete.
 - Visualization Phase: Each analysis step is followed by its corresponding visualization step:
   - Fairness analysis followed by Fairness visualization
   - Explainability analysis followed by Explainability visualization
