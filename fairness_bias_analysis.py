@@ -5,13 +5,12 @@ from typing import Literal, Dict, Tuple, Any, Union
 from pathlib import Path
 from utils import load_csv, store_json, concat_dfs
 
-
 ANALYSIS_MAP = {
     "equalized_odds": "error_rates_by_group",
     "demographic_parity": "prediction_rates_by_group",
 }
 TARGET_COLUMN = "label"
-DEMOGRAPHICS_COLUMNS = {"age": "Age", "gender": "Gender"}
+DEMOGRAPHICS_COLUMNS = {"age": "age", "gender": "sexe"}
 
 
 def pass_checks(
@@ -62,7 +61,7 @@ def prepare_data_for_analysis(
 
     Returns:
         Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: A tuple containing three DataFrames:
-            - dem_df (pd.DataFrame): DataFrame with demographic columns (Age, Gender).
+            - dem_df (pd.DataFrame): DataFrame with demographic columns.
             - actual_df (pd.DataFrame): DataFrame with actual target values renamed to 'actual'.
             - pred_df (pd.DataFrame): DataFrame with predicted target values renamed to 'pred'.
     """
@@ -108,7 +107,7 @@ def compute_fpr(true: pd.Series, pred: pd.Series) -> float:
         float: False Positive Rate = FP / (FP + TN)
     """
 
-    cm = confusion_matrix(true, pred)
+    cm = confusion_matrix(true, pred, labels=[0, 1])
     tn, fp, fn, tp = cm.ravel()
 
     fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
@@ -123,7 +122,7 @@ def calculate_metric(
     """Calculate fairness metrics (Equalized Odds or Demographic Parity) per demographic group.
 
     Args:
-        data (pd.DataFrame): DataFrame containing demographic columns ('Age', 'Gender'),
+        data (pd.DataFrame): DataFrame containing demographic columns,
             actual labels ('actual'), and predicted labels ('pred').
         analysis (Literal["equalized_odds", "demographic_parity"]): Type of fairness
             analysis to perform. Must be either 'equalized_odds' or 'demographic_parity'.

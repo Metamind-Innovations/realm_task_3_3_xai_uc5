@@ -1,5 +1,5 @@
 import argparse
-from typing import Dict, List, Any, Tuple, Union, DefaultDict
+from typing import Dict, List, Any, Tuple, Union, DefaultDict, Optional
 import pandas as pd
 from pathlib import Path
 from sklearn.model_selection import train_test_split
@@ -13,27 +13,26 @@ import re
 from utils import load_csv, store_json, is_between, save_pickle, select_method
 from COPowereD_model import COPowereDWrapper
 
-
 RANDOM_STATE = 2025
 TARGET_COLUMN = "label"
 
 CATEGORICAL_COLUMNS = [
-    "Gender",
-    "b_COPD",
-    "s_Worsening",
-    "s_Breath",
-    "s_Cough",
-    "s_Sputum",
+    "sexe",
+    "baseline_copd",
+    "symp_worsening",
+    "symp_breath",
+    "symp_cough",
+    "symp_sputum",
 ]
 NUMERICAL_COLUMNS = [
-    "Age",
-    "Height",
-    "Weight",
-    "BMI",
-    "b_HeartRate",
-    "b_SPO2",
-    "c_HeartRate",
-    "c_SPO2",
+    "age",
+    "baseline_height",
+    "baseline_weight",
+    "baseline_bmi",
+    "baseline_heartRate",
+    "baseline_spo2",
+    "heartRate",
+    "spo2",
 ]
 
 
@@ -86,7 +85,7 @@ def data_imputation(data: pd.DataFrame) -> pd.DataFrame:
 
 def prepare_data_for_analysis(
     tabular_data: pd.DataFrame,
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Prepare feature and target data from full dataset.
 
     Args:
@@ -97,15 +96,17 @@ def prepare_data_for_analysis(
         Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: A tuple containing two DataFrames:
             - features_df (pd.DataFrame): DataFrame with features.
             - target_df (pd.DataFrame): DataFrame with target values.
-            - id_df (pd.DataFrame): DataFrame with id.
     """
 
-    features_df = tabular_data.copy().drop(columns=[TARGET_COLUMN, "id"])
+    drop_columns = [TARGET_COLUMN]
+    if "id" in tabular_data.columns:
+        drop_columns.append("id")
+
+    features_df = tabular_data.copy().drop(columns=drop_columns)
 
     target_df = tabular_data[[TARGET_COLUMN]].copy()
-    id_df = tabular_data[["id"]].copy()
 
-    return features_df, target_df, id_df
+    return features_df, target_df
 
 
 def stratified_split(
@@ -170,7 +171,10 @@ def shap_to_json(
 
 
 def shap_analysis(
-    X: pd.DataFrame, y: pd.DataFrame, feature_names: List[str]
+    X: pd.DataFrame,
+    y: pd.DataFrame,
+    feature_names: List[str],
+    in_docker: bool = False,
 ) -> Tuple[
     Dict[str, Union[List[float], List[List[float]], List[str]]], shap.Explanation
 ]:
@@ -195,7 +199,7 @@ def shap_analysis(
     # Split data
     X_background, X_explain, y_background, y_explain = stratified_split(X=X, y=y)
 
-    model = COPowereDWrapper(feature_names=feature_names, one_dim_preds=True)
+    model = COPowereDWrapper(feature_names=feature_names, one_dim_preds=True, in_docker=in_docker)
 
     # SHAP XAI analysis
     shap_explainer = shap.KernelExplainer(model=model.predict_proba, data=X_background)
@@ -238,7 +242,10 @@ def lime_global_importance(
 
 
 def lime_analysis(
-    X: pd.DataFrame, y: pd.DataFrame, feature_names: List[str]
+    X: pd.DataFrame,
+    y: pd.DataFrame,
+    feature_names: List[str],
+    in_docker: bool = False,
 ) -> Tuple[Dict[str, Dict[str, float]], List[Dict[str, Union[int, float]]]]:
     """Perform LIME explainability analysis on tabular data.
     Generates local explanations for each instance using LIME (Local Interpretable
@@ -259,7 +266,7 @@ def lime_analysis(
             the feature weights for that specific prediction.
     """
 
-    model = COPowereDWrapper(feature_names=feature_names)
+    model = COPowereDWrapper(feature_names=feature_names, in_docker=in_docker)
 
     class_names = list(model.get_class_names().values())
     categorical_indices = [X.columns.get_loc(col) for col in CATEGORICAL_COLUMNS]
@@ -296,7 +303,7 @@ def lime_analysis(
         instance_weights = {
             "instance_idx": k,
             "true_class": int(y[k][0]),
-            "predicted_class": model.predict(X[k : k + 1]),
+            "predicted_class": int(model.predict(X[k : k + 1])[0]),
             "explained_class": explained_class,
         }
 
@@ -326,6 +333,7 @@ def run_explainability_analysis(
     tabular_data: Union[str, Path],
     output_dir: Union[str, Path],
     sensitivity: float,
+    in_docker: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Runs an explainability analysis on tabular data using either lime
@@ -336,7 +344,7 @@ def run_explainability_analysis(
         3. Selects the explainability method based on sensitivity.
            - Low sensitivity (<0.5): LIME
            - High sensitivity (>=0.5): SHAP
-        4. Configures the API Endpoint model.
+        4. Configures the Dockerized model wrapper.
         5. Performs explainability analysis.
         6. Stores results.
 
@@ -354,7 +362,7 @@ def run_explainability_analysis(
 
     # Prepare data
     tabular_data = data_imputation(tabular_data)
-    tabular_data, label, id = prepare_data_for_analysis(tabular_data=tabular_data)
+    tabular_data, label = prepare_data_for_analysis(tabular_data=tabular_data)
 
     method = select_method(sensitivity)
     print(f"Using method: {method} based on sensitivity: {sensitivity}")
@@ -364,12 +372,12 @@ def run_explainability_analysis(
     # Perform analysis
     if method == "lime":
         results, detailed_results = lime_analysis(
-            X=tabular_data, y=label, feature_names=feature_names
+            X=tabular_data, y=label, feature_names=feature_names, in_docker=in_docker,
         )
 
     elif method == "shap":
         results, detailed_results = shap_analysis(
-            X=tabular_data, y=label, feature_names=feature_names
+            X=tabular_data, y=label, feature_names=feature_names, in_docker=in_docker,
         )
 
     # Store results to output dir
@@ -416,6 +424,12 @@ def main():
         default=0.7,
         help="Sensitivity value (0-1): <0.5 uses lime, >=0.5 uses shap",
     )
+    parser.add_argument(
+        "--in_docker",
+        type=lambda v: v == "True",
+        default=False,
+        help="Set to True when running inside the COPowereD Docker container",
+    )
     args = parser.parse_args()
 
     if not is_between(x=args.sensitivity):
@@ -425,6 +439,7 @@ def main():
         tabular_data=args.tabular_data,
         output_dir=Path(args.output),
         sensitivity=args.sensitivity,
+        in_docker=args.in_docker,
     )
 
 

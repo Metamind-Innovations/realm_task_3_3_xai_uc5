@@ -51,7 +51,7 @@ def plot_consolidated_chart(data: Dict, demographic_name: str, output_dir: Path)
 
     Parameters:
         data (dict): Full analysis results
-        demographic_name (str): Demographic to visualize (e.g., 'Age', 'Gender')
+        demographic_name (str): Demographic to visualize (e.g., 'age', 'sexe')
         output_dir (Path): Directory to save the plot
     """
 
@@ -61,7 +61,7 @@ def plot_consolidated_chart(data: Dict, demographic_name: str, output_dir: Path)
     bias_method_display = format_method_name(bias_method)
 
     # Determine color palette
-    color_map = AGE_COLORS if demographic_name == "Age" else GENDER_COLORS
+    color_map = AGE_COLORS if demographic_name.lower() == "age" else GENDER_COLORS
 
     # Prepare data structures
     fpr_categories = []
