@@ -68,9 +68,6 @@ class COPowereDWrapper:
     def predict_proba(
         self,
         data: Union[pd.DataFrame, np.ndarray],
-        num_retries: int = 1,
-        retry_delay: float = 0.0,
-        batch_size: int = 1000,
     ) -> np.ndarray:
         """Predict class probabilities for input tabular data.
 
@@ -78,15 +75,11 @@ class COPowereDWrapper:
         ``/app/data/result/result.csv`` with a single ``proba`` column.
 
         :param data: DataFrame or array with model input columns.
-        :param num_retries: Number of Docker execution attempts.
-        :param retry_delay: Delay between attempts in seconds.
-        :param batch_size: Maximum rows sent to one Docker run.
         :return: Probability array with shape ``(n_samples, 2)`` unless
             ``one_dim_preds`` is ``True``.
         :raises ValueError: If the input data or model output is inconsistent.
         :raises RuntimeError: If Docker execution fails.
         """
-        import time
 
         if isinstance(data, np.ndarray):
             if not self.feature_names:
@@ -107,95 +100,78 @@ class COPowereDWrapper:
             )
 
         model_data = data.loc[:, self.MODEL_COLUMNS]
-        probabilities = []
-        n_samples = len(model_data)
-        n_batches = (n_samples + batch_size - 1) // batch_size
 
-        for batch_idx in range(n_batches):
-            start_idx = batch_idx * batch_size
-            end_idx = min((batch_idx + 1) * batch_size, n_samples)
-            batch_data = model_data.iloc[start_idx:end_idx]
-            last_error = None
+        with tempfile.TemporaryDirectory(prefix="copowered_model_") as tmp_dir:
+            data_dir = Path(tmp_dir).resolve()
+            input_dir = data_dir / "data"
+            output_dir = data_dir / "result"
+            input_dir.mkdir(parents=True, exist_ok=True)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            input_csv = input_dir / "data.csv"
+            result_csv = output_dir / "result.csv"
+            model_data.to_csv(input_csv, index=False)
 
-            for attempt in range(num_retries):
-                with tempfile.TemporaryDirectory(prefix="copowered_model_") as tmp_dir:
-                    data_dir = Path(tmp_dir).resolve()
-                    input_dir = data_dir / "data"
-                    output_dir = data_dir / "result"
-                    input_dir.mkdir(parents=True, exist_ok=True)
-                    output_dir.mkdir(parents=True, exist_ok=True)
-                    input_csv = input_dir / "data.csv"
-                    result_csv = output_dir / "result.csv"
-                    batch_data.to_csv(input_csv, index=False)
+            command = [
+                self.docker_executable,
+                "run",
+                "--rm",
+                "--entrypoint",
+                "sh",
+                "-v",
+                f"{data_dir.as_posix()}:/app/data",
+                self.image,
+                "-c",
+                (
+                    "cd /app && "
+                    "printf '%s\\n' "
+                    "'log4j.rootLogger=ERROR, stdout' "
+                    "'log4j.appender.stdout=org.apache.log4j.ConsoleAppender' "
+                    "'log4j.appender.stdout.Target=System.out' "
+                    "'log4j.appender.stdout.layout=org.apache.log4j.PatternLayout' "
+                    "> log4j.properties && "
+                    f"{self.MODEL_COMMAND}"
+                ),
+            ]
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                check=False,
+                text=True,
+            )
 
-                    command = [
-                        self.docker_executable,
-                        "run",
-                        "--rm",
-                        "--entrypoint",
-                        "sh",
-                        "-v",
-                        f"{data_dir.as_posix()}:/app/data",
-                        self.image,
-                        "-c",
-                        (
-                            "cd /app && "
-                            "printf '%s\\n' "
-                            "'log4j.rootLogger=ERROR, stdout' "
-                            "'log4j.appender.stdout=org.apache.log4j.ConsoleAppender' "
-                            "'log4j.appender.stdout.Target=System.out' "
-                            "'log4j.appender.stdout.layout=org.apache.log4j.PatternLayout' "
-                            "> log4j.properties && "
-                            f"{self.MODEL_COMMAND}"
-                        ),
-                    ]
-                    completed = subprocess.run(
-                        command,
-                        capture_output=True,
-                        check=False,
-                        text=True,
+            if completed.returncode == 0 and result_csv.exists():
+                result_df = pd.read_csv(result_csv)
+                if "proba" not in result_df.columns:
+                    raise ValueError(
+                        "Dockerized model output must contain a 'proba' column."
+                    )
+                if len(result_df) != len(model_data):
+                    raise ValueError(
+                        "Dockerized model output row count does not match "
+                        "the input row count."
                     )
 
-                    if completed.returncode == 0 and result_csv.exists():
-                        result_df = pd.read_csv(result_csv)
-                        if "proba" not in result_df.columns:
-                            raise ValueError(
-                                "Dockerized model output must contain a 'proba' column."
-                            )
-                        if len(result_df) != len(batch_data):
-                            raise ValueError(
-                                "Dockerized model output row count does not match "
-                                "the input row count."
-                            )
-
-                        probabilities.append(result_df["proba"].to_numpy(dtype=float))
-                        self._last_response = result_df.copy()
-                        last_error = None
-                        break
-
-                    last_error = (
-                        completed.stderr.strip()
-                        or completed.stdout.strip()
-                        or "Dockerized model did not create result.csv."
-                    )
-
-                if attempt < num_retries - 1:
-                    time.sleep(retry_delay)
-
-            if last_error is not None:
-                raise RuntimeError(
-                    "Dockerized model failed for batch "
-                    f"{batch_idx + 1}/{n_batches}: {last_error}"
+                probabilities = result_df["proba"].to_numpy(dtype=float)
+                self._last_response = result_df.copy()
+            else:
+                model_error = (
+                    completed.stderr.strip()
+                    or completed.stdout.strip()
+                    or "Dockerized model did not create result.csv."
                 )
 
-        positive_probabilities = np.concatenate(probabilities)
+                raise RuntimeError(
+                    "Dockerized model failed: "
+                    f"{model_error}"
+                )
+
         all_probabilities = np.column_stack(
-            [1.0 - positive_probabilities, positive_probabilities]
+            [1.0 - probabilities, probabilities]
         )
 
         if self.one_dim_preds:
-            self._last_probabilities = positive_probabilities
-            return positive_probabilities
+            self._last_probabilities = probabilities
+            return probabilities
 
         self._last_probabilities = all_probabilities
         return all_probabilities
@@ -203,20 +179,14 @@ class COPowereDWrapper:
     def predict(
         self,
         data: Union[pd.DataFrame, np.ndarray],
-        num_retries: int = 1,
-        retry_delay: float = 0.0,
     ) -> np.ndarray:
         """Predict binary class labels for input tabular data.
 
         :param data: DataFrame or array with model input columns.
-        :param num_retries: Number of Docker execution attempts.
-        :param retry_delay: Delay between attempts in seconds.
         :return: Array of binary class labels.
         """
         probabilities = self.predict_proba(
             data=data,
-            num_retries=num_retries,
-            retry_delay=retry_delay,
         )
         positive_probabilities = (
             probabilities if probabilities.ndim == 1 else probabilities[:, 1]

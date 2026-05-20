@@ -254,7 +254,7 @@ def fairness_visualization(
         raise FileNotFoundError(f"Fairness visualization script not found at {script}")
     if not analysis_results_file.exists():
         raise FileNotFoundError(
-            f"Fairness analysis results not found at {analysis_results_file}"
+            f"Fairness-Bias analysis results not found at {analysis_results_file}"
         )
 
     cmd = [
@@ -282,7 +282,6 @@ def fairness_visualization(
 def explainer_analysis(
     project_files: Input[Model],
     data: Input[Dataset],
-    predictions: Input[Dataset],
     explainer_results: Output[Dataset],
     sensitivity: float,
 ) -> None:
@@ -290,7 +289,6 @@ def explainer_analysis(
 
     :param project_files: Input path containing project scripts.
     :param data: Input path containing labeled ``data.csv``.
-    :param predictions: Input path containing Docker model ``result.csv``.
     :param explainer_results: Output path for explainer results.
     :param sensitivity: Sensitivity parameter for the explainer script.
     """
@@ -299,20 +297,16 @@ def explainer_analysis(
 
     proj_path = Path(project_files.path)
     data_path = Path(data.path)
-    predictions_path = Path(predictions.path)
     results_path = Path(explainer_results.path)
     results_path.mkdir(parents=True, exist_ok=True)
 
     script = proj_path / "explainer.py"
     tabular_csv = data_path / "data.csv"
-    result_csv = predictions_path / "result.csv"
 
     if not script.exists():
         raise FileNotFoundError(f"Explainer script not found at {script}")
     if not tabular_csv.exists():
         raise FileNotFoundError(f"Tabular data file not found at {tabular_csv}")
-    if not result_csv.exists():
-        raise FileNotFoundError(f"Predictions file not found at {result_csv}")
 
     cmd = [
         "python",
@@ -323,8 +317,6 @@ def explainer_analysis(
         str(sensitivity),
         "--output",
         str(results_path),
-        "--predictions",
-        str(result_csv),
     ]
     subprocess.run(cmd, check=True)
 
